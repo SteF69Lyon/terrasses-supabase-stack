@@ -1,0 +1,73 @@
+# docker-compose.override.yml — terrasses-supabase-stack
+#
+# S'ajoute par-dessus le docker-compose.yml upstream Supabase (non modifié)
+# pour :
+#   1. Forcer les ports Postgres/Pooler en 127.0.0.1 (anti-bypass-UFW)
+#   2. Intégrer Kong au réseau Traefik existant et router api.terrasse-au-soleil.fr
+#   3. Monter les Edge Functions du repo + injecter les secrets AI
+#
+# Réseau `root_default` = celui créé par le compose Traefik à la racine du VPS.
+# Pré-requis : ce réseau doit déjà exister (présent grâce à n8n/Iremia/Poolscore).
+#
+# Project name : `terrasses` (toutes les ressources préfixées terrasses_*)
+
+services:
+
+  db:
+    container_name: terrasses-supabase-db
+    # Volume Postgres dédié au projet (jamais partagé)
+    volumes:
+      - terrasses_db_data:/var/lib/postgresql/data
+      # Migrations DDL appliquées au premier boot (initdb)
+      - ../../db/migrations:/docker-entrypoint-initdb.d/migrations:ro
+
+  supavisor:
+    # CRITIQUE : l'upstream publie 5432 et 6543 sur 0.0.0.0 — Docker bypass UFW.
+    # On force 127.0.0.1 + ports non-conflictuels (Iremia=5432/6543, Poolscore=5433/6544).
+    ports: !override
+      - "127.0.0.1:5434:5432"
+      - "127.0.0.1:6545:6543"
+
+  functions:
+    container_name: terrasses-supabase-functions
+    volumes:
+      - ../../supabase/functions:/home/deno/functions:ro
+    environment:
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY}
+      OPENAI_API_KEY: ${OPENAI_API_KEY}
+      GEMINI_API_KEY: ${GEMINI_API_KEY}
+
+  kong:
+    container_name: terrasses-supabase-kong
+    networks:
+      default:
+        aliases:
+          - api-gw
+      traefik-public: {}
+    labels:
+      - "traefik.enable=true"
+      - "traefik.docker.network=root_default"
+      # Router HTTPS sur api.terrasse-au-soleil.fr
+      - "traefik.http.routers.terrasses-api.rule=Host(`api.terrasse-au-soleil.fr`)"
+      - "traefik.http.routers.terrasses-api.entrypoints=websecure"
+      - "traefik.http.routers.terrasses-api.tls=true"
+      - "traefik.http.routers.terrasses-api.tls.certresolver=mytlschallenge"
+      - "traefik.http.services.terrasses-api.loadbalancer.server.port=8000"
+      # Headers de sécurité
+      - "traefik.http.middlewares.terrasses-sec.headers.stsseconds=31536000"
+      - "traefik.http.middlewares.terrasses-sec.headers.stsincludesubdomains=true"
+      - "traefik.http.middlewares.terrasses-sec.headers.stspreload=true"
+      - "traefik.http.middlewares.terrasses-sec.headers.contenttypenosniff=true"
+      - "traefik.http.middlewares.terrasses-sec.headers.browserxssfilter=true"
+      - "traefik.http.middlewares.terrasses-sec.headers.framedeny=true"
+      - "traefik.http.middlewares.terrasses-sec.headers.referrerpolicy=strict-origin-when-cross-origin"
+      - "traefik.http.routers.terrasses-api.middlewares=terrasses-sec"
+
+volumes:
+  terrasses_db_data:
+    name: terrasses_db_data
+
+networks:
+  traefik-public:
+    name: root_default
+    external: true
