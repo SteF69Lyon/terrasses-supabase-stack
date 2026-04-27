@@ -27,7 +27,7 @@ set -euo pipefail
 DB_CONTAINER="${DB_CONTAINER:-terrasses-supabase-db}"
 GPG_RECIPIENT="${GPG_RECIPIENT:-backup@terrasse-au-soleil.fr}"
 BACKUP_REMOTE="${BACKUP_REMOTE:-scaleway}"
-BACKUP_BUCKET="${BACKUP_BUCKET:-terrasses-supabase-backups}"
+BACKUP_BUCKET="${BACKUP_BUCKET:-iremia-supabase-backups}"
 BACKUP_PATH="${BACKUP_PATH:-postgres/terrasses}"
 LOG_DIR="${LOG_DIR:-/var/log/terrasses-backup}"
 DRY_RUN="${DRY_RUN:-}"
