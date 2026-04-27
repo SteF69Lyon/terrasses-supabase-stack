@@ -65,6 +65,10 @@ services:
 
   kong:
     container_name: terrasses-supabase-kong
+    # Pas d'exposition de port côté host : Traefik parle à Kong via le réseau Docker
+    # interne (`root_default`). Évite le conflit avec Iremia/Poolscore qui utilisent
+    # déjà 8000/8443 par défaut.
+    ports: !override []
     networks:
       default:
         aliases:
