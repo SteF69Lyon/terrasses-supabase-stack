@@ -74,6 +74,7 @@ async function overpassQuery(lat: number, lng: number, type: string): Promise<Os
     out center 50;
   `.trim();
 
+  const errors: string[] = [];
   for (const mirror of OVERPASS_MIRRORS) {
     try {
       const res = await fetch(mirror, {
@@ -81,14 +82,22 @@ async function overpassQuery(lat: number, lng: number, type: string): Promise<Os
         body: 'data=' + encodeURIComponent(q),
         headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
       });
-      if (!res.ok) continue;
+      if (!res.ok) {
+        const body = await res.text().catch(() => '');
+        const err = `${mirror} HTTP ${res.status}: ${body.slice(0, 200)}`;
+        errors.push(err);
+        console.error(`[search-terraces] ${err}`);
+        continue;
+      }
       const json = await res.json();
       return (json.elements ?? []) as OsmElement[];
-    } catch {
-      // try next mirror
+    } catch (e) {
+      const msg = (e as Error).message;
+      errors.push(`${mirror}: ${msg}`);
+      console.error(`[search-terraces] Overpass ${mirror} threw: ${msg}`);
     }
   }
-  throw new Error('All Overpass mirrors failed');
+  throw new Error(`All Overpass mirrors failed: ${errors.join(' | ')}`);
 }
 
 function locationKey(lat: number, lng: number, type: string): string {
