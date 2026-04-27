@@ -1,0 +1,23 @@
+# Secrets
+.env
+.env.local
+*.key
+*.pem
+*-credentials.json
+*-service-account*.json
+
+# Volumes Docker (jamais dans le repo)
+docker/volumes/
+
+# Logs
+*.log
+/var/log/
+
+# Node / build artefacts (Edge Functions)
+node_modules/
+.deno/
+dist/
+
+# OS
+.DS_Store
+Thumbs.db
