@@ -25,6 +25,7 @@ services:
       - terrasses_db_data:/var/lib/postgresql/data
 
   supavisor:
+    container_name: terrasses-supabase-pooler
     # CRITIQUE : l'upstream publie 5432 et 6543 sur 0.0.0.0 — Docker bypass UFW.
     # On force 127.0.0.1 + ports non-conflictuels (Iremia=5432/6543, Poolscore=5433/6544).
     ports: !override
@@ -39,6 +40,28 @@ services:
       ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY}
       OPENAI_API_KEY: ${OPENAI_API_KEY}
       GEMINI_API_KEY: ${GEMINI_API_KEY}
+
+  # Container name overrides pour cohabiter avec Iremia/Poolscore sur le même VPS
+  # (l'upstream Supabase utilise des container_name fixes "supabase-*" qui
+  # entreraient en conflit sinon).
+  studio:
+    container_name: terrasses-supabase-studio
+  auth:
+    container_name: terrasses-supabase-auth
+  rest:
+    container_name: terrasses-supabase-rest
+  realtime:
+    container_name: terrasses-supabase-realtime
+  storage:
+    container_name: terrasses-supabase-storage
+  imgproxy:
+    container_name: terrasses-supabase-imgproxy
+  meta:
+    container_name: terrasses-supabase-meta
+  analytics:
+    container_name: terrasses-supabase-analytics
+  vector:
+    container_name: terrasses-supabase-vector
 
   kong:
     container_name: terrasses-supabase-kong
