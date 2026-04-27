@@ -198,18 +198,28 @@ Réponds EXCLUSIVEMENT par un tableau JSON de la forme :
     });
 
     // Parser le JSON
+    console.log(`[search-terraces] LLM raw response (first 500 chars): ${ai.text.slice(0, 500)}`);
     const match = ai.text.match(/\[[\s\S]*\]/);
-    let enrichments: Array<{ id: string; sunExposure: number | null; description: string }> = [];
+    let enrichments: Array<{ id: string | number; sunExposure: number | null; description: string }> = [];
     if (match) {
       try {
         enrichments = JSON.parse(match[0]);
-      } catch {
-        // si le LLM rend du JSON cassé, on retourne quand même les terraces sans enrichissement
+        console.log(`[search-terraces] Parsed ${enrichments.length} enrichments. First: ${JSON.stringify(enrichments[0])}`);
+      } catch (e) {
+        console.error(`[search-terraces] JSON parse failed: ${(e as Error).message}. Raw match: ${match[0].slice(0, 300)}`);
       }
+    } else {
+      console.error(`[search-terraces] No JSON array found in LLM response. Full text: ${ai.text.slice(0, 1000)}`);
     }
 
+    const sentIds = new Set(terraces.map((t) => t.id));
+    const enrichmentIds = new Set(enrichments.map((e) => String(e.id)));
+    const matched = [...sentIds].filter((id) => enrichmentIds.has(id)).length;
+    console.log(`[search-terraces] sent ${sentIds.size} ids, LLM returned ${enrichmentIds.size} ids, matched ${matched}`);
+
     const enriched = terraces.map((t) => {
-      const e = enrichments.find((x) => x.id === t.id);
+      // Tolère id en string ou en number côté LLM
+      const e = enrichments.find((x) => String(x.id) === t.id);
       return e
         ? { ...t, sunExposure: e.sunExposure, description: e.description }
         : t;
