@@ -113,6 +113,51 @@ function locationKey(lat: number, lng: number, type: string): string {
   return k;
 }
 
+/**
+ * Robust JSON-array extractor for LLM responses.
+ * Handles : markdown fences (```json ... ```), prose before/after, [ in strings,
+ * and TRUNCATED arrays (missing closing ]) by appending ] when depth never returns
+ * to 0. Returns null only if no [ at all.
+ */
+function extractJsonArray(raw: string): string | null {
+  const text = raw.replace(/```(?:json)?/gi, '');
+  const start = text.indexOf('[');
+  if (start === -1) return null;
+
+  let depth = 0;
+  let inString = false;
+  let escape = false;
+
+  for (let i = start; i < text.length; i++) {
+    const c = text[i];
+    if (escape) { escape = false; continue; }
+    if (c === '\\') { escape = true; continue; }
+    if (c === '"') { inString = !inString; continue; }
+    if (inString) continue;
+    if (c === '[') depth++;
+    else if (c === ']') {
+      depth--;
+      if (depth === 0) return text.slice(start, i + 1);
+    }
+  }
+
+  // Truncated: append the missing closing brackets and try anyway.
+  // Drop a possible trailing partial entry (after last `,`) to give JSON.parse
+  // a chance.
+  let candidate = text.slice(start);
+  const lastComma = candidate.lastIndexOf(',');
+  const lastClose = candidate.lastIndexOf('}');
+  if (lastClose < lastComma) {
+    candidate = candidate.slice(0, lastComma);
+  }
+  // Add as many `]` as needed to balance.
+  while (depth > 0) {
+    candidate += ']';
+    depth--;
+  }
+  return candidate;
+}
+
 function osmToTerrace(el: OsmElement) {
   const lat = el.lat ?? el.center?.lat;
   const lon = el.lon ?? el.center?.lon;
@@ -191,26 +236,43 @@ Pour chaque POI, calcule un sunExposure entre 0 (totalement à l'ombre) et 100 (
 Réponds EXCLUSIVEMENT par un tableau JSON de la forme :
 [{"id":"<id>","sunExposure":<0-100|null>,"description":"<courte analyse>"}]`;
 
-    const ai = await generate({
-      system: 'Tu es un expert en analyse d\'ensoleillement urbain. Tu réponds uniquement en JSON.',
-      messages: [{ role: 'user', content: prompt }],
-      maxTokens: 2000,
-    });
+    type Enrichment = { id: string | number; sunExposure: number | null; description: string };
 
-    // Parser le JSON
-    console.log(`[search-terraces] LLM raw response (first 500 chars): ${ai.text.slice(0, 500)}`);
-    const match = ai.text.match(/\[[\s\S]*\]/);
-    let enrichments: Array<{ id: string | number; sunExposure: number | null; description: string }> = [];
-    if (match) {
-      try {
-        enrichments = JSON.parse(match[0]);
-        console.log(`[search-terraces] Parsed ${enrichments.length} enrichments. First: ${JSON.stringify(enrichments[0])}`);
-      } catch (e) {
-        console.error(`[search-terraces] JSON parse failed: ${(e as Error).message}. Raw match: ${match[0].slice(0, 300)}`);
+    async function callLLM(): Promise<{ enrichments: Enrichment[]; provider: string; model: string }> {
+      const res = await generate({
+        system: 'Tu es un expert en analyse d\'ensoleillement urbain. Tu réponds uniquement en JSON.',
+        messages: [{ role: 'user', content: prompt }],
+        maxTokens: 4000,
+      });
+      console.log(`[search-terraces] LLM raw response (first 500 chars): ${res.text.slice(0, 500)}`);
+      const jsonStr = extractJsonArray(res.text);
+      let parsed: Enrichment[] = [];
+      if (jsonStr) {
+        try {
+          parsed = JSON.parse(jsonStr);
+          if (!Array.isArray(parsed)) parsed = [];
+          console.log(`[search-terraces] Parsed ${parsed.length} enrichments. First: ${JSON.stringify(parsed[0])}`);
+        } catch (e) {
+          console.error(`[search-terraces] JSON parse failed: ${(e as Error).message}. Head: ${jsonStr.slice(0, 200)} | Tail: ${jsonStr.slice(-150)}`);
+        }
+      } else {
+        console.error(`[search-terraces] No [ found in LLM response. Full text: ${res.text.slice(0, 1000)}`);
       }
-    } else {
-      console.error(`[search-terraces] No JSON array found in LLM response. Full text: ${ai.text.slice(0, 1000)}`);
+      return { enrichments: parsed, provider: res.provider, model: res.model };
     }
+
+    let { enrichments, provider, model } = await callLLM();
+
+    // Retry once if the LLM returned malformed JSON (Claude can be flaky).
+    if (enrichments.length === 0 && terraces.length > 0) {
+      console.warn('[search-terraces] First LLM call returned 0 enrichments; retrying once.');
+      const retry = await callLLM();
+      enrichments = retry.enrichments;
+      provider = retry.provider;
+      model = retry.model;
+    }
+
+    const ai = { provider, model };
 
     const sentIds = new Set(terraces.map((t) => t.id));
     const enrichmentIds = new Set(enrichments.map((e) => String(e.id)));
