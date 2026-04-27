@@ -16,10 +16,13 @@ services:
   db:
     container_name: terrasses-supabase-db
     # Volume Postgres dédié au projet (jamais partagé)
+    # Note : nos migrations DDL ne sont PAS auto-mountées dans /docker-entrypoint-initdb.d
+    # car ça entrerait en conflit avec les fichiers d'init upstream Supabase
+    # (_supabase.sql, realtime.sql, pooler.sql, etc.). On les applique manuellement
+    # après le boot via `for f in db/migrations/*.sql; do docker exec ... psql ... < $f; done`
+    # (voir Task 18 step 7 et le script scripts/deploy-functions.sh / Bloc D du runbook).
     volumes:
       - terrasses_db_data:/var/lib/postgresql/data
-      # Migrations DDL appliquées au premier boot (initdb)
-      - ../../db/migrations:/docker-entrypoint-initdb.d/migrations:ro
 
   supavisor:
     # CRITIQUE : l'upstream publie 5432 et 6543 sur 0.0.0.0 — Docker bypass UFW.
