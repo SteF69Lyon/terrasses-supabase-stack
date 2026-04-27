@@ -54,7 +54,9 @@ function validate(d: unknown): string | null {
 
 async function geocode(location: string): Promise<{ lat: number; lng: number }> {
   const url = `${NOMINATIM}?format=json&limit=1&q=${encodeURIComponent(location)}`;
-  const res = await fetch(url, { headers: { 'User-Agent': 'terrasse-au-soleil/1.0' } });
+  const res = await fetch(url, {
+    headers: { 'User-Agent': 'terrasse-au-soleil/1.0 (https://terrasse-au-soleil.fr; contact: sflandrin@outlook.com)' },
+  });
   if (!res.ok) throw new Error(`Nominatim ${res.status}`);
   const arr = await res.json();
   if (!arr.length) throw new Error(`Location not found: ${location}`);
@@ -80,7 +82,11 @@ async function overpassQuery(lat: number, lng: number, type: string): Promise<Os
       const res = await fetch(mirror, {
         method: 'POST',
         body: 'data=' + encodeURIComponent(q),
-        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+        headers: {
+          'Content-Type': 'application/x-www-form-urlencoded',
+          // OSM/Overpass demande un UA identifiable, sinon 406/429 par les anti-abus.
+          'User-Agent': 'terrasse-au-soleil/1.0 (https://terrasse-au-soleil.fr; contact: sflandrin@outlook.com)',
+        },
       });
       if (!res.ok) {
         const body = await res.text().catch(() => '');
